@@ -25,7 +25,7 @@ load_dotenv()
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL = "openrouter/free"
+MODEL = "inclusionai/ling-3.0-flash-sante:free"
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
