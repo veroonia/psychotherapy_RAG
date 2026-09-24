@@ -193,11 +193,7 @@
                 `message ${type}`;
 
 
-            message.innerHTML = `
-                <div class="bubble">
-                    ${escapeHtml(text)}
-                </div>
-            `;
+            message.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
 
 
             messages.appendChild(message);
