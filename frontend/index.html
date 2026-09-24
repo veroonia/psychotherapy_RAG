@@ -118,9 +118,9 @@
 
 
         /*
-         * Send a message.
+         * Send a message and get a real reply from the backend.
          */
-        function sendMessage() {
+        async function sendMessage() {
 
             const text =
                 input.value.trim();
@@ -145,25 +145,44 @@
             input.value = "";
 
 
-            /*
-             * Demo AI response.
-             *
-             * Replace this later with your
-             * backend / AI API call.
-             */
-            setTimeout(() => {
+            // Show a placeholder bubble while we wait for the backend
+            const thinkingBubble = addMessage("Thinking...", "bot");
 
-                addMessage(
-                    "Thanks! This is a demo response. Connect your AI backend here to make the chatbot fully functional.",
-                    "bot"
-                );
 
-            }, 500);
+            try {
+
+                const response = await fetch("/chat", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ message: text })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || `Server error: ${response.status}`);
+                }
+
+                thinkingBubble.querySelector(".bubble").textContent = data.reply;
+
+            } catch (err) {
+
+                console.error(err);
+
+                thinkingBubble.querySelector(".bubble").textContent =
+                    "Sorry, I couldn't reach the AI backend. Is app.py running?";
+            }
+
+
+            messages.scrollTop = messages.scrollHeight;
         }
 
 
         /*
-         * Add a message to the chat.
+         * Add a message to the chat. Returns the created element so
+         * callers can update it later (used for the "Thinking..." bubble).
          */
         function addMessage(text, type) {
 
@@ -187,6 +206,8 @@
             // Automatically scroll to newest message
             messages.scrollTop =
                 messages.scrollHeight;
+
+            return message;
         }
 
 
