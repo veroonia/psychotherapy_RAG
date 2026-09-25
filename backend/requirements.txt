@@ -1,6 +1,5 @@
 flask
 requests
 python-dotenv
-pypdf
-sentence-transformers
 qdrant-client
+sentence-transformers

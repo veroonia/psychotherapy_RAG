@@ -1,11 +1,9 @@
 """
 app.py
-Minimal backend for the AI Chat frontend. Serves index.html/style.css
-from ../frontend and exposes a /chat endpoint that calls OpenRouter.
-
-This is step one: a working chatbot with no RAG yet. Once this works,
-we'll swap the plain system prompt for retrieved context from the RAG
-pipeline (rag/retrieve.py).
+Backend for the AI Chat frontend, now grounded in the RAG pipeline.
+Serves index.html/style.css from ../frontend and exposes a /chat
+endpoint that retrieves relevant chunks from the vector DB and asks
+OpenRouter to answer using them (see rag/generate.py).
 
 Setup:
     1. Put OPENROUTER_API_KEY=sk-or-v1-... in a .env file in this folder.
@@ -15,28 +13,21 @@ Setup:
 """
 
 import os
+import sys
 from pathlib import Path
 
-import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 
 load_dotenv()
 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL = "inclusionai/ling-3.0-flash-sante:free"
+# make rag/ importable so we can reuse its retrieve + generate logic
+RAG_DIR = Path(__file__).parent.parent / "rag"
+sys.path.insert(0, str(RAG_DIR))
+from generate import answer_question  # noqa: E402
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
-
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
-
-SYSTEM_PROMPT = (
-    "You are a helpful, warm AI assistant for a psychotherapy-focused chat app. "
-    "Be clear and concise. You are not a therapist and cannot provide diagnosis "
-    "or crisis support -- if asked for personal clinical advice, answer generally "
-    "and note that a licensed professional should be consulted for individual care."
-)
 
 
 @app.route("/")
@@ -46,7 +37,7 @@ def index():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    if not OPENROUTER_API_KEY:
+    if not os.environ.get("OPENROUTER_API_KEY"):
         return jsonify({"error": "OPENROUTER_API_KEY not set on the server."}), 500
 
     data = request.get_json(force=True, silent=True) or {}
@@ -55,30 +46,19 @@ def chat():
         return jsonify({"error": "No message provided."}), 400
 
     try:
-        response = requests.post(
-            OPENROUTER_URL,
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": MODEL,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_message},
-                ],
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        result = response.json()
-        reply = result["choices"][0]["message"]["content"]
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"OpenRouter request failed: {e}"}), 502
-    except (KeyError, IndexError):
-        return jsonify({"error": "Unexpected response format from OpenRouter."}), 502
+        result = answer_question(user_message)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate answer: {e}"}), 502
 
-    return jsonify({"reply": reply})
+    return jsonify({
+        "reply": result["answer"],
+        "sources": [
+            {"source": h["source"], "page": h["page"]}
+            for h in result["sources"]
+        ],
+    })
 
 
 if __name__ == "__main__":
