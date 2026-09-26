@@ -42,11 +42,12 @@ def chat():
 
     data = request.get_json(force=True, silent=True) or {}
     user_message = data.get("message", "").strip()
+    history = data.get("history", [])
     if not user_message:
         return jsonify({"error": "No message provided."}), 400
 
     try:
-        result = answer_question(user_message)
+        result = answer_question(user_message, history=history)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:

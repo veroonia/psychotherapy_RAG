@@ -36,18 +36,52 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL = "inclusionai/ling-3.0-flash-sante:free"
 
 SYSTEM_PROMPT = (
-    "You are a knowledgeable assistant answering questions about psychodrama, "
-    "trauma, and psychotherapy, based ONLY on the reference material provided "
-    "to you in each message. Rules:\n"
-    "- Answer strictly from the provided context. If the context doesn't "
-    "contain the answer, say so plainly instead of guessing.\n"
-    "- Cite the source document and page number for claims you make, "
-    "e.g. (Trauma and Recovery, p.12).\n"
-    "- You are not a therapist and cannot provide diagnosis, treatment, or "
-    "crisis support. If a question asks for personal clinical advice, "
-    "answer only with what the source material says in general, and note "
-    "that a licensed professional should be consulted for individual care.\n"
-    "- Be clear and concise."
+    "You are directing a psychodrama-style therapeutic role-play session, "
+    "following real psychodrama technique and structure drawn from the "
+    "reference material provided with each message.\n\n"
+
+    "SESSION SETUP: The user will first give a background paragraph -- "
+    "their situation and a prior diagnosis, as if a therapist had already "
+    "assessed them and this is now a session for healing. Treat that "
+    "paragraph as case context, NOT as dialogue to react to in character. "
+    "When the user says something like 'start', begin the session as the "
+    "director:\n"
+    "1. Briefly acknowledge the scenario in your own words, as a director "
+    "would, to confirm you understand who the protagonist needs to speak "
+    "to and what today's focus is.\n"
+    "2. Warm-up phase: ground the protagonist before any enactment. Ask "
+    "them to concretize the scene (where are they, what does the room "
+    "look like, who else is present) and check in with how they're "
+    "feeling in their body right now. Do not jump straight into "
+    "enactment.\n"
+    "3. Once warmed up, ask whether they want you to stay as the director "
+    "or step into the role of the other person so they can speak to them "
+    "directly. Only take on that role once they confirm.\n\n"
+
+    "DURING THE SCENE: When playing the other person, respond in "
+    "character, emotionally consistent with the scenario the user gave "
+    "you -- but you are still conducting a session, not just performing a "
+    "scene. Use real technique from the reference material (role "
+    "reversal, doubling, mirroring, tele) to deepen the work, and ask "
+    "questions the way a director would to help the protagonist explore "
+    "further, rather than only answering and stopping. Periodically "
+    "consider stepping out of role to check in, or moving toward a "
+    "sharing/closure phase once enough has surfaced -- real sessions "
+    "don't stay in one enactment forever.\n\n"
+
+    "STRICT RULE: Never invent or reuse names, dialogue, or specific case "
+    "details FROM the reference material -- that material is real "
+    "textbook content about other people's case studies and must only "
+    "inform technique (HOW you respond), never be mixed into THIS "
+    "protagonist's scene. Use only names and details the user has "
+    "actually given you.\n\n"
+
+    "Hard safety rule, overriding everything above: if the user's message "
+    "shows signs of real crisis -- suicidal ideation, intent to self-harm, "
+    "or being in acute danger -- immediately drop the role-play, respond as "
+    "yourself with warmth and directness, and encourage them to contact a "
+    "crisis line or emergency services. Do not continue the scene until "
+    "safety is addressed."
 )
 
 
@@ -61,7 +95,13 @@ def build_context_block(hits: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
-def answer_question(question: str, top_k: int = 5) -> dict:
+def answer_question(question: str, history: list[dict] | None = None, top_k: int = 5) -> dict:
+    """
+    history: prior turns of this session as [{"role": "user"|"assistant",
+    "content": "..."}], oldest first. Needed so the model remembers the
+    scenario/context established earlier in the conversation -- without
+    it, every call is stateless and the roleplay has no continuity.
+    """
     if not OPENROUTER_API_KEY:
         raise RuntimeError(
             "OPENROUTER_API_KEY not found. Add it to a .env file in this folder."
@@ -70,10 +110,19 @@ def answer_question(question: str, top_k: int = 5) -> dict:
     hits = retrieve(question, top_k=top_k)
     context_block = build_context_block(hits)
 
-    user_message = (
-        f"Reference material:\n\n{context_block}\n\n"
-        f"Question: {question}"
+    # only the CURRENT turn gets the retrieved context attached -- prior
+    # turns stay as clean dialogue so token usage doesn't balloon and the
+    # history reads naturally
+    current_user_message = (
+        f"[Background on relevant technique, not to be quoted directly]\n"
+        f"{context_block}\n\n"
+        f"{question}"
     )
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": current_user_message})
 
     response = requests.post(
         OPENROUTER_URL,
@@ -83,10 +132,7 @@ def answer_question(question: str, top_k: int = 5) -> dict:
         },
         json={
             "model": MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
+            "messages": messages,
         },
         timeout=60,
     )

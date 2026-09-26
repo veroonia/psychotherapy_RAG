@@ -98,6 +98,11 @@
         const messages =
             document.getElementById("messages");
 
+        // keeps the running conversation so the backend can send it as
+        // context to the model -- without this, every message would be
+        // treated as the start of a brand new session
+        let conversationHistory = [];
+
 
         /*
          * Send message when Enter is pressed.
@@ -156,7 +161,10 @@
                     headers: {
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ message: text })
+                    body: JSON.stringify({
+                        message: text,
+                        history: conversationHistory
+                    })
                 });
 
                 const data = await response.json();
@@ -167,12 +175,16 @@
 
                 thinkingBubble.querySelector(".bubble").textContent = data.reply;
 
+                // remember this exchange for future turns
+                conversationHistory.push({ role: "user", content: text });
+                conversationHistory.push({ role: "assistant", content: data.reply });
+
             } catch (err) {
 
                 console.error(err);
 
                 thinkingBubble.querySelector(".bubble").textContent =
-                    "Sorry, I couldn't reach the AI backend. Is app.py running?";
+                    `Something went wrong: ${err.message}`;
             }
 
 
@@ -193,7 +205,11 @@
                 `message ${type}`;
 
 
-            message.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
+            message.innerHTML = `
+                <div class="bubble">
+                    ${escapeHtml(text)}
+                </div>
+            `;
 
 
             messages.appendChild(message);
@@ -211,6 +227,8 @@
          * Start a new chat.
          */
         function newChat() {
+
+            conversationHistory = [];
 
             messages.innerHTML = `
 
